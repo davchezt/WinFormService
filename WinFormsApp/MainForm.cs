@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections;
+using System.ComponentModel;
 using System.Configuration.Install;
 using System.IO;
 using System.Linq;
@@ -41,6 +42,20 @@ namespace WinFormsApp
             catch (Exception ex)
             {
                 MessageBox.Show(ex.Message);
+            }
+        }
+
+        internal DialogResult ShowlaunchArgs(string launchArgs)
+        {
+            return MessageBox.Show(null, "args: " + launchArgs, MessageBoxButtons.OKCancel);
+        }
+
+        protected override void OnClosing(CancelEventArgs e)
+        {
+            e.Cancel = true;
+            if (MessageBox.Show(this, "Are you sure?", "", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
+            {
+                Application.Exit();
             }
         }
 

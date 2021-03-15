@@ -8,90 +8,101 @@ using System.Diagnostics;
 using System.IO;
 using System.Net;
 using System.Net.Http;
-using System.ServiceProcess;
+using System.Threading;
 using System.Threading.Tasks;
-using System.Timers;
+using System.Windows.Forms;
 using Tiny.RestClient;
+using TrayApp.Properties;
 
-namespace DaVcheztService
+namespace TrayApp
 {
-    public partial class MainService : ServiceBase
+    static class Program
     {
-        string ApiUrl = "https://api.entrepreneurday.id";
-        static string exePath = AppDomain.CurrentDomain.BaseDirectory + "WinFormsApp.exe";
+        static Mutex mutex = new Mutex(true, "{aaf9b8d3-736e-40ac-935b-f44043ec2691}");
 
-        TinyRestClient client;
-        SocketIOClient socket;
-
-        Timer timer = new Timer(); // name space(using System.Timers;)
-        public MainService()
+        /// <summary>
+        /// The main entry point for the application.
+        /// </summary>
+        [STAThread]
+        static void Main()
         {
-            InitializeComponent();
+            string[] launchArgs = Environment.GetCommandLineArgs();
 
-            // Socket.IO
-            SocketConnect();
-        }
-
-        protected override void OnStart(string[] args)
-        {
-            WriteToFile("Service is started at " + DateTime.Now);
-
-            timer.Elapsed += new ElapsedEventHandler(OnElapsedTime);
-            timer.Interval = 300000; // number in milisecinds 5 minutes
-            timer.Enabled = true;
-
-            Program.Start(args);
-        }
-
-        protected override void OnStop()
-        {
-            socket.Close();
-            socket.Dispose();
-
-            WriteToFile("Service is stopped at " + DateTime.Now);
-
-            Program.Stop();
-        }
-
-        private void OnElapsedTime(object source, ElapsedEventArgs e)
-        {
-            // GET
-            DoGetRequest("v1/user/me");
-            // POST JSON
-            // DoPostRequest("v1/user/login");
-            // POST FormData
-            DoFormPostRequest("v1/user/login");
-
-            WriteToFile("Service is recall at " + DateTime.Now);
-        }
-
-        public void WriteToFile(string Message)
-        {
-            string path = AppDomain.CurrentDomain.BaseDirectory + "\\Logs";
-            if (!Directory.Exists(path))
+            if (mutex.WaitOne(TimeSpan.Zero, true))
             {
-                Directory.CreateDirectory(path);
-            }
+                Application.EnableVisualStyles();
+                Application.SetCompatibleTextRenderingDefault(false);
 
-            string filepath = AppDomain.CurrentDomain.BaseDirectory + "\\Logs\\ServiceLog_" + DateTime.Now.Date.ToShortDateString().Replace('/', '_') + ".txt";
-            if (!File.Exists(filepath))
-            {
-                // Create a file to write to. 
-                using (StreamWriter sw = File.CreateText(filepath))
+                try
                 {
-                    sw.WriteLine(Message);
+                    string args = String.Empty;
+                    if (launchArgs.Length > 1)
+                    {
+                        args = launchArgs[1].Trim();
+                    }
+
+                    Application.Run(new MyCustomApplicationContext());
                 }
+                catch (UriFormatException) { }
             }
             else
             {
-                using (StreamWriter sw = File.AppendText(filepath))
+                string args = String.Empty;
+                if (launchArgs.Length > 1)
                 {
-                    sw.WriteLine(Message);
+                    args = launchArgs[1].Trim();
                 }
+
+                MessageBox.Show("App is running" + args);
             }
+            mutex.ReleaseMutex();
+        }
+    }
+
+    public class MyCustomApplicationContext : ApplicationContext
+    {
+        private NotifyIcon trayIcon;
+
+        public MyCustomApplicationContext()
+        {
+            // Initialize Tray Icon
+            trayIcon = new NotifyIcon()
+            {
+                Icon = Resources.AppIcon,
+                ContextMenu = new ContextMenu(new MenuItem[] {
+                new MenuItem("Exit", Exit)
+            }),
+                Visible = true
+            };
+
+            Helper.SocketConnect();
+            // GET
+            Helper.DoGetRequest("v1/user/me");
+            // POST JSON
+            // DoPostRequest("v1/user/login");
+            // POST FormData
+            Helper.DoFormPostRequest("v1/user/login");
         }
 
-        public void SocketConnect()
+        void Exit(object sender, EventArgs e)
+        {
+            // Hide tray icon, otherwise it will remain shown until user mouses over it
+            trayIcon.Visible = false;
+
+            Helper.SocketDisconnect();
+            Application.Exit();
+        }
+    }
+
+    public static class Helper
+    {
+        static string ApiUrl = "https://api.entrepreneurday.id";
+        static string exePath = AppDomain.CurrentDomain.BaseDirectory + "WinFormsApp.exe";
+
+        static TinyRestClient client;
+        static SocketIOClient socket;
+
+        public static void SocketConnect()
         {
             SocketIOClientOption option = new SocketIOClientOption(EngineIOScheme.https, "militant-socket-server.herokuapp.com", 443);
             // SocketIOClientOption option = new SocketIOClientOption(EngineIOScheme.http, "localhost", 8080);
@@ -150,13 +161,8 @@ namespace DaVcheztService
                         string exeConsolePath = AppDomain.CurrentDomain.BaseDirectory + "ConsoleApp.exe";
 
                         WriteToFile("Execute: " + exePath + " " + Data[0]["event"].ToString());
-                        WriteToFile("Execute: " + exeConsolePath);
 
-                        // Process.Start(exePath, Data[0]["event"].ToString());
-                        ProcessExtensions.StartProcessAsCurrentUser(exePath, Data[0]["event"].ToString());
-                        ProcessExtensions.StartProcessAsCurrentUser(exeConsolePath);
-
-                        /*ProcessStartInfo info = new ProcessStartInfo(exeConsolePath);
+                        ProcessStartInfo info = new ProcessStartInfo(exePath, Data[0]["event"].ToString());
                         info.UseShellExecute = false;
                         info.RedirectStandardError = true;
                         info.RedirectStandardInput = true;
@@ -165,7 +171,7 @@ namespace DaVcheztService
                         info.ErrorDialog = false;
                         info.WindowStyle = ProcessWindowStyle.Hidden;
 
-                        Process process = Process.Start(info);*/
+                        Process process = Process.Start(info);
                     }
                 }
             });
@@ -186,7 +192,13 @@ namespace DaVcheztService
             }
         }
 
-        private void DoGetRequest(String RouterPath = null)
+        public static void SocketDisconnect()
+        {
+            socket.Close();
+            socket.Dispose();
+        }
+
+        public static void DoGetRequest(String RouterPath = null)
         {
             Task.Run(action: async () =>
             {
@@ -222,7 +234,7 @@ namespace DaVcheztService
             });
         }
 
-        private void DoPostRequest(String RouterPath = null)
+        public static void DoPostRequest(String RouterPath = null)
         {
             Task.Run(action: async () =>
             {
@@ -264,7 +276,7 @@ namespace DaVcheztService
             });
         }
 
-        private void DoFormPostRequest(String RouterPath = null)
+        public static void DoFormPostRequest(String RouterPath = null)
         {
             Task.Run(action: async () =>
             {
@@ -297,6 +309,32 @@ namespace DaVcheztService
                     WriteToFile($"{ex.Message} {ex.ReasonPhrase}");
                 }
             });
+        }
+
+        public static void WriteToFile(string Message)
+        {
+            string path = AppDomain.CurrentDomain.BaseDirectory + "\\Logs";
+            if (!Directory.Exists(path))
+            {
+                Directory.CreateDirectory(path);
+            }
+
+            string filepath = AppDomain.CurrentDomain.BaseDirectory + "\\Logs\\HelperLog_" + DateTime.Now.Date.ToShortDateString().Replace('/', '_') + ".txt";
+            if (!File.Exists(filepath))
+            {
+                // Create a file to write to. 
+                using (StreamWriter sw = File.CreateText(filepath))
+                {
+                    sw.WriteLine(Message);
+                }
+            }
+            else
+            {
+                using (StreamWriter sw = File.AppendText(filepath))
+                {
+                    sw.WriteLine(Message);
+                }
+            }
         }
     }
 }
