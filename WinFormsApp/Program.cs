@@ -1,21 +1,31 @@
-﻿using Microsoft.Win32;
-using System;
+﻿using System;
+using System.Diagnostics;
+using System.Linq;
 using System.Threading;
+using System.Windows.Automation;
 using System.Windows.Forms;
 
 namespace WinFormsApp
 {
     internal sealed class Program
     {
-        static Mutex mutex = new Mutex(true, "{13AE3E4A-35CD-45F9-9AB4-B142EF8E900A}");
+        static Mutex mutex = new Mutex(true, @"Global\41d7d4bf-58f7-4861-9f46-95f582ef26b6");
         static MainForm mainForm;
 
         public Program(bool showForm)
         {
-            mainForm = new MainForm();
-            if (showForm)
+            mainForm = (MainForm)GetOpenedForm<MainForm>();
+            if (mainForm == null)
             {
-                Show();
+                mainForm = new MainForm();
+                if (showForm)
+                {
+                    Show();
+                }
+            }
+            else
+            {
+                mainForm.Select();
             }
         }
 
@@ -24,16 +34,16 @@ namespace WinFormsApp
             mainForm.Show();
         }
 
-        private void SetStartup(bool save)
+        public static Form GetOpenedForm<T>() where T : Form
         {
-            RegistryKey rk = Registry.CurrentUser.OpenSubKey
-                ("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run", true);
-
-            if (save)
-                rk.SetValue("WinFormsApp", Application.ExecutablePath);
-            else
-                rk.DeleteValue("WinFormsApp", false);            
-
+            foreach (Form openForm in Application.OpenForms)
+            {
+                if (openForm.GetType() == typeof(T))
+                {
+                    return openForm;
+                }
+            }
+            return null;
         }
 
         /// <summary>
@@ -47,31 +57,51 @@ namespace WinFormsApp
                 Application.EnableVisualStyles();
                 Application.SetCompatibleTextRenderingDefault(false);
 
+                string[] launchArgs = Environment.GetCommandLineArgs();
                 try
                 {
-                    string[] launchArgs = Environment.GetCommandLineArgs();
                     if (launchArgs.Length > 1)
                     {
-                        Program p = new Program(false);
-                        if (mainForm.ShowlaunchArgs("args: " + launchArgs[1].Trim()) == DialogResult.OK)
+                        MainForm mForm = new MainForm();
+                        if (MessageBox.Show(null, launchArgs[1].Trim(), MessageBoxButtons.OKCancel) == DialogResult.OK)
                         {
-                            p.Show();
+                            mForm.Show();
                             Application.Run();
+                        }
+                        else
+                        {
+                            mForm.Dispose();
+                            Application.Exit();
                         }
                     }
                     else
                     {
-                        new Program(true);
-                        Application.Run();
+                        Application.Run(new MainForm());
                     }
                 }
-                catch (UriFormatException) { }
+                catch { }
+                mutex.ReleaseMutex();
             }
             else
             {
-                MessageBox.Show("App is running");
+                string[] launchArgs = Environment.GetCommandLineArgs();
+                try
+                {
+                    if (launchArgs.Length > 1)
+                    {
+                        try
+                        {
+                            NativeMethods.sendWindowsStringMessage((int)NativeMethods.HWND_BROADCAST, 0, launchArgs[1].Trim());
+                        }
+                        catch { }
+                    }
+                    else
+                    {
+                        NativeMethods.PostMessage((IntPtr)NativeMethods.HWND_BROADCAST, NativeMethods.WM_SHOWME, IntPtr.Zero, IntPtr.Zero);
+                    }
+                }
+                catch { }
             }
-            mutex.ReleaseMutex();
         }
     }
 }

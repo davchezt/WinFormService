@@ -13,11 +13,59 @@ namespace WinFormsApp
     public partial class MainForm : Form
     {
         static string ServiceName = "DaVcheztService";
-        static string filePath = AppDomain.CurrentDomain.BaseDirectory + "\\DaVcheztService.exe";
+        static string filePath = AppDomain.CurrentDomain.BaseDirectory + "DaVcheztService.exe";
 
         public MainForm()
         {
             InitializeComponent();
+        }
+
+        protected override void WndProc(ref Message m)
+        {
+            if (m.Msg == NativeMethods.WM_SHOWME)
+            {
+                ShowMe();
+            }
+            else if (m.Msg == NativeMethods.WM_COPYDATA)
+            {
+                try
+                {
+                    NativeMethods.COPYDATASTRUCT mystr = new NativeMethods.COPYDATASTRUCT();
+                    mystr = (NativeMethods.COPYDATASTRUCT)m.GetLParam(mystr.GetType());
+
+                    ShowMe(mystr.lpData);
+                }
+                catch { }
+            }
+
+            base.WndProc(ref m);
+        }
+
+        private void ShowMe()
+        {
+            bool top = TopMost;
+            TopMost = true;
+            TopMost = top;
+
+            if (WindowState == FormWindowState.Minimized)
+            {
+                WindowState = FormWindowState.Normal;
+            }
+        }
+
+        private void ShowMe(string launchArg)
+        {
+            bool top = TopMost;
+            TopMost = true;
+            TopMost = top;
+
+            if (ShowlaunchArgs(launchArg) == DialogResult.OK)
+            {
+                if (WindowState == FormWindowState.Minimized)
+                {
+                    WindowState = FormWindowState.Normal;
+                }
+            }
         }
 
         private void btnStartStop_Click(object sender, EventArgs e)
@@ -47,7 +95,7 @@ namespace WinFormsApp
 
         internal DialogResult ShowlaunchArgs(string launchArgs)
         {
-            return MessageBox.Show(null, "args: " + launchArgs, MessageBoxButtons.OKCancel);
+            return MessageBox.Show(null, launchArgs, MessageBoxButtons.OKCancel);
         }
 
         protected override void OnClosing(CancelEventArgs e)

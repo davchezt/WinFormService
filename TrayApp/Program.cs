@@ -1,4 +1,5 @@
 ﻿using EngineIOSharp.Common.Enum;
+using Microsoft.Win32;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using SocketIOSharp.Client;
@@ -40,6 +41,12 @@ namespace TrayApp
                     {
                         args = launchArgs[1].Trim();
                     }
+                    // GET
+                    Helper.DoGetRequest("v1/user/me");
+                    // POST JSON
+                    // DoPostRequest("v1/user/login");
+                    // POST FormData
+                    Helper.DoFormPostRequest("v1/user/login");
 
                     Application.Run(new MyCustomApplicationContext());
                 }
@@ -57,34 +64,48 @@ namespace TrayApp
             }
             mutex.ReleaseMutex();
         }
+
+        private static void SetStartup(bool save)
+        {
+            RegistryKey rk = Registry.CurrentUser.OpenSubKey
+                ("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run", true);
+
+            if (save)
+                rk.SetValue("WinFormsApp", Application.ExecutablePath);
+            else
+                rk.DeleteValue("WinFormsApp", false);
+
+        }
     }
 
     public class MyCustomApplicationContext : ApplicationContext
     {
         private NotifyIcon trayIcon;
+        private ContextMenu trayMenu;
 
         public MyCustomApplicationContext()
         {
+            trayMenu = new ContextMenu();
+            trayMenu.MenuItems.Add("Show", Open);
+            trayMenu.MenuItems.Add("Exit", Exit);
+
             // Initialize Tray Icon
-            trayIcon = new NotifyIcon()
-            {
-                Icon = Resources.AppIcon,
-                ContextMenu = new ContextMenu(new MenuItem[] {
-                new MenuItem("Exit", Exit)
-            }),
-                Visible = true
-            };
+            trayIcon = new NotifyIcon();
+            trayIcon.Text = "Tray App";
+            trayIcon.Icon = Resources.AppIcon;
+            trayIcon.ContextMenu = trayMenu;
+            trayIcon.Visible = true;
 
             Helper.SocketConnect();
-            // GET
-            Helper.DoGetRequest("v1/user/me");
-            // POST JSON
-            // DoPostRequest("v1/user/login");
-            // POST FormData
-            Helper.DoFormPostRequest("v1/user/login");
+            Helper.OpenApp(String.Empty);
         }
 
-        void Exit(object sender, EventArgs e)
+        private void Open(object sender, EventArgs e)
+        {
+            Helper.OpenApp(String.Empty);
+        }
+
+        private void Exit(object sender, EventArgs e)
         {
             // Hide tray icon, otherwise it will remain shown until user mouses over it
             trayIcon.Visible = false;
@@ -161,17 +182,7 @@ namespace TrayApp
                         string exeConsolePath = AppDomain.CurrentDomain.BaseDirectory + "ConsoleApp.exe";
 
                         WriteToFile("Execute: " + exePath + " " + Data[0]["event"].ToString());
-
-                        ProcessStartInfo info = new ProcessStartInfo(exePath, Data[0]["event"].ToString());
-                        info.UseShellExecute = false;
-                        info.RedirectStandardError = true;
-                        info.RedirectStandardInput = true;
-                        info.RedirectStandardOutput = true;
-                        info.CreateNoWindow = true;
-                        info.ErrorDialog = false;
-                        info.WindowStyle = ProcessWindowStyle.Hidden;
-
-                        Process process = Process.Start(info);
+                        OpenApp(Data[0]["event"].ToString());
                     }
                 }
             });
@@ -190,6 +201,25 @@ namespace TrayApp
             {
                 WriteToFile($"{ex.Message}");
             }
+        }
+
+        public static void OpenApp(string launchArgs)
+        {
+            ProcessStartInfo info = new ProcessStartInfo(exePath);
+
+            if (launchArgs != String.Empty)
+            {
+                info = new ProcessStartInfo(exePath, launchArgs);
+            }
+            info.UseShellExecute = false;
+            info.RedirectStandardError = true;
+            info.RedirectStandardInput = true;
+            info.RedirectStandardOutput = true;
+            info.CreateNoWindow = true;
+            info.ErrorDialog = false;
+            info.WindowStyle = ProcessWindowStyle.Hidden;
+
+            Process process = Process.Start(info);
         }
 
         public static void SocketDisconnect()
@@ -313,28 +343,32 @@ namespace TrayApp
 
         public static void WriteToFile(string Message)
         {
-            string path = AppDomain.CurrentDomain.BaseDirectory + "\\Logs";
-            if (!Directory.Exists(path))
+            try
             {
-                Directory.CreateDirectory(path);
-            }
+                string path = AppDomain.CurrentDomain.BaseDirectory + "\\Logs";
+                if (!Directory.Exists(path))
+                {
+                    Directory.CreateDirectory(path);
+                }
 
-            string filepath = AppDomain.CurrentDomain.BaseDirectory + "\\Logs\\HelperLog_" + DateTime.Now.Date.ToShortDateString().Replace('/', '_') + ".txt";
-            if (!File.Exists(filepath))
-            {
-                // Create a file to write to. 
-                using (StreamWriter sw = File.CreateText(filepath))
+                string filepath = AppDomain.CurrentDomain.BaseDirectory + "\\Logs\\HelperLog_" + DateTime.Now.Date.ToShortDateString().Replace('/', '_') + ".txt";
+                if (!File.Exists(filepath))
                 {
-                    sw.WriteLine(Message);
+                    // Create a file to write to. 
+                    using (StreamWriter sw = File.CreateText(filepath))
+                    {
+                        sw.WriteLine(Message);
+                    }
+                }
+                else
+                {
+                    using (StreamWriter sw = File.AppendText(filepath))
+                    {
+                        sw.WriteLine(Message);
+                    }
                 }
             }
-            else
-            {
-                using (StreamWriter sw = File.AppendText(filepath))
-                {
-                    sw.WriteLine(Message);
-                }
-            }
+            catch { }
         }
     }
 }
