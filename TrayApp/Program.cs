@@ -6,9 +6,11 @@ using SocketIOSharp.Client;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Drawing;
 using System.IO;
 using System.Net;
 using System.Net.Http;
+using System.Security.Permissions;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -78,26 +80,71 @@ namespace TrayApp
         }
     }
 
+    [SecurityPermission(SecurityAction.LinkDemand, Flags = SecurityPermissionFlag.UnmanagedCode)]
+    public class TestMessageFilter : IMessageFilter
+    {
+        public bool PreFilterMessage(ref Message m)
+        {
+            // Blocks all the messages relating to the left mouse button. 
+            if (m.Msg >= 513 && m.Msg <= 515)
+            {
+                Console.WriteLine("Processing the messages : " + m.Msg);
+                return true;
+            }
+            return false;
+        }
+    }
+
     public class MyCustomApplicationContext : ApplicationContext
     {
         private NotifyIcon trayIcon;
-        private ContextMenu trayMenu;
+        private ContextMenuStrip trayMenu;
 
         public MyCustomApplicationContext()
         {
-            trayMenu = new ContextMenu();
-            trayMenu.MenuItems.Add("Show", Open);
-            trayMenu.MenuItems.Add("Exit", Exit);
+            trayMenu = new ContextMenuStrip();
+            trayMenu.Items.AddRange(InitializeMenu());
+            trayMenu.RenderMode = ToolStripRenderMode.Professional;
 
             // Initialize Tray Icon
             trayIcon = new NotifyIcon();
             trayIcon.Text = "Tray App";
             trayIcon.Icon = Resources.AppIcon;
-            trayIcon.ContextMenu = trayMenu;
+            trayIcon.ContextMenuStrip = trayMenu;
             trayIcon.Visible = true;
+            trayIcon.DoubleClick += Open;
+            // trayIcon.BalloonTipClicked += Open;
+
+            ShowTip("App Running", ToolTipIcon.Info);
 
             Helper.SocketConnect();
             Helper.OpenApp(String.Empty);
+        }
+
+        private ToolStripItem[] InitializeMenu()
+        {
+            ToolStripItem[] menu = new ToolStripItem[] {
+                new ToolStripMenuItem("Restore Window", null, Open),
+                new ToolStripMenuItem("Open Logs Dir", null, Open),
+                new ToolStripMenuItem("View Logs", null, Open),
+                new ToolStripMenuItem("About", null, Open),
+                new ToolStripSeparator(),
+                new ToolStripMenuItem("Exit", null, Exit)
+            };
+            return menu;
+        }
+
+        public void ShowTip(string tipText, ToolTipIcon icon)
+        {
+            Icon ico = Icon.FromHandle((new Icon(Resources.AppIcon, 256, 256).ToBitmap()).GetHicon());
+            trayIcon.BalloonTipTitle = "Tray App";
+            trayIcon.BalloonTipText = tipText;
+            trayIcon.BalloonTipIcon = icon;
+            trayIcon.Icon = ico;
+            trayIcon.BalloonTipClicked += delegate {
+                Helper.OpenApp(String.Empty);
+            };
+            trayIcon.ShowBalloonTip(1000);
         }
 
         private void Open(object sender, EventArgs e)
